@@ -1,0 +1,173 @@
+import cv2 as cv
+import imutils
+from number_detection import *
+
+path = "/home/pks/Downloads/Assignment/IVP/mini project/"
+
+def approx_rect(con):
+    '''
+    Determine boundary rectangle of a contour
+    Parameters:
+        con : Given contour
+    Returns:
+        Boundary Rectangle
+    '''
+    
+    contours_poly = cv.approxPolyDP(con, 3, True)
+    boundRect = cv.boundingRect(contours_poly)
+    return boundRect
+
+def all_contour(th):
+    '''
+    Returns all contour and the particular contours which may contain digit
+    '''
+    
+    cnts = cv.findContours(th.copy(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    cnts = imutils.grab_contours(cnts)
+
+    # drawing = image.copy()
+    rect = list()
+    for c_el in cnts:
+        boundRect = approx_rect(c_el)
+        area, wh_ratio = boundRect[2]*boundRect[3], boundRect[2]/boundRect[3] 
+        top, left = th.shape
+        # print(top, left, boundRect)
+#         if area > 80 and area < 300 and wh_ratio < 3.5 and wh_ratio > 0.28:
+        if 10 <= boundRect[3] <= 50 and 2 <= boundRect[2] <= 45 and 20 < area < 1300:
+            # and boundRect[0] < left-5 and boundRect[1] > 5:
+            rect.append([(int(boundRect[0]), int(boundRect[1])), (int(boundRect[0]+boundRect[2]), int(boundRect[1]+boundRect[3]))])
+        
+    #         cv.rectangle(drawing, (int(boundRect[0]), int(boundRect[1])), (int(boundRect[0]+boundRect[2]), int(boundRect[1]+boundRect[3])), 0, 1)
+    # cv.imshow("wrap", drawing)
+    # cv.waitKey(0)
+        
+    return rect, cnts
+
+
+def isThere(l, el):
+    return el in l
+
+def trapped(start, end, rect, w, h):
+    '''Remove extra contour pixel created from morphological operation'''
+    ret_val = False
+    # print("t", start, end, h, w)
+
+    # if isThere(start,0) or isThere(end,0) or start[0] == h or start[1] == w or end[0] == h or end[1] == w:
+    #     ret_val = True
+    #     return ret_val
+
+    if [start, end] in rect:
+        return ret_val
+    
+    for point in rect:
+        s, e = point
+
+        if (start >= s and end <= e):
+            ret_val = True
+            break
+
+    return ret_val
+
+
+def extract_num(image):
+    '''
+    Extract the part of image where is a valid number
+    Parameters:
+        image
+    Returns:
+        Part of the image containing numbers and also boundary rectangle of all the contours within that.
+        Each contour signifies some digit or decimal point
+    '''
+    
+#     image = cv.GaussianBlur(image, (3,3), 0)
+    '''hsv thresholding'''
+    hsv_image = cv.cvtColor(image.copy(), cv.COLOR_BGR2HSV)
+    # cv.imshow("hsv", hsv_image)
+    # cv.waitKey(0)
+    lower_blue = np.array([100,1,1])
+    upper_blue = np.array([170,255,255])
+
+    mask = cv.inRange(hsv_image, lower_blue, upper_blue)
+    # cv.imshow("mask", mask)
+    # cv.waitKey(0)
+    inv_mask = cv.bitwise_not(mask)
+
+    '''gray thresholding'''
+    image = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
+    row, col = image.shape
+    # cv.imshow("img", image)
+    # cv.waitKey(0)
+
+    _, thresh = cv.threshold(image, 0, 255, cv.THRESH_BINARY_INV+cv.THRESH_OTSU)
+    # gray_sc = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
+    # gauss = cv.adaptiveThreshold(image, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 35, 1)
+
+    # cv.imshow("thresh", thresh)
+    # cv.imshow('gauss', gauss)
+
+    # cv.waitKey(0)
+
+    '''Removing border pixels'''
+    # thresh = cv.bitwise_and(thresh, thresh, mask=inv_mask)
+    # cv.imshow("thresh", thresh)
+    # cv.waitKey(0)
+
+    kernel = np.ones((1, 2), np.uint8)
+    # kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (2, 1))
+    # # kernel1 = cv.getStructuringElement(cv.MORPH_ELLIPSE, (2, 3))
+
+    # cv.imshow("thresh1", thresh1)
+    # cv.waitKey(0)
+    thresh1 = cv.morphologyEx(thresh, cv.MORPH_CLOSE, kernel)
+
+    thresh1 = cv.morphologyEx(thresh1, cv.MORPH_OPEN, kernel)
+
+    thresh1 = thresh
+
+    # cv.imshow("thresh1", thresh1)
+    # cv.waitKey(0)
+
+    rect, cnts = all_contour(thresh1)
+    if len(rect) == 0:
+        # print("Hi")
+        rect, cnts = all_contour(thresh)
+        # print(rect, cnts)
+    
+    if len(rect) == 0:
+        return [], image
+    else:
+        left = min(rect, key=lambda x: x[0][0])[0][0]
+        right = max(rect, key=lambda x: x[1][0])[1][0]
+        top = min(rect, key=lambda x: x[0][1])[0][1]
+        bottom = max(rect, key=lambda x: x[1][1])[1][1]
+
+        # drawing = image.copy()
+        ret_val = []
+        for c_el in cnts:
+            boundRect = approx_rect(c_el)
+            start, end = (int(boundRect[0]), int(boundRect[1])), (
+            int(boundRect[0] + boundRect[2]), int(boundRect[1] + boundRect[3]))
+            # cv.rectangle(drawing, start, end, 0, 1)
+
+            if start[0] > 2 and top <= start[1] and bottom >= end[1] and left <= start[0] and right >= end[
+                0] and not trapped(start, end, rect, row, col):
+                ret_val.append([(int(boundRect[0]), int(boundRect[1])),
+                                (int(boundRect[0] + boundRect[2]), int(boundRect[1] + boundRect[3]))])
+
+        # cv.imshow("i", image)
+        # cv.waitKey(0)
+
+        return ret_val, image
+
+
+if __name__ == '__main__':
+    
+    image = cv.imread("cell_im1.jpg")
+    conts, number = extract_num(image)
+    print(conts)
+    conts = sorted(conts, key=lambda x: (x[0], x[1]))
+    for r in conts:
+        temp = number[r[0][1]:r[1][1], r[0][0]-4:r[1][0]]
+        cv.imshow('temp', temp)
+        cv.waitKey(0)
+        cv.imwrite('cell_new.jpg', temp)
